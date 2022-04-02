@@ -2,3 +2,4 @@ __pycache__/
 json/
 test-save-file.py
 test-scrapper.py
+secret.py

@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.traceback import install
+from datetime import datetime
 
 install()
 console = Console()
@@ -147,7 +148,8 @@ def metro_article_scrap(url,keys_list):
     elif key == "date":
       post_date = soup.find("span", class_="post-date")
       post_date = post_date.getText().replace("'","\'")
-      return_json_list.append({'post_date':post_date})
+      formated_post_date = datetime.strptime(post_date,"%A %d %b %Y %I:%M %p")
+      return_json_list.append({'post_date': str(formated_post_date)})
     elif key == "body":
       article_body = soup.find("div", class_="article-body")
       article_body = article_body.getText().replace("'","\'").replace("\n\n","")
@@ -189,15 +191,17 @@ def metro_section_links(section_links_list):
   return links_list
 
 #####################################################
-############### bbc.co.uk ###########################
+################# bbc.com ###########################
 #####################################################
-def bbc_response_build(url,links_list):
+def bbc_response_build(url,deep_lvl,links_list):
   page_link_list = []
   section_link_list = []
-  
-  #print('clear_links -> go to bbc_clear_links(',url,', links_list len:',len(links_list),')')
+  #print(links_list)
+  #print('\n\t\t'+'*'*100)
+  #print('\t\t  _response_build -> go to metro_clear_links(',url,', links_list len:',len(links_list),')\n\t\t','*'*100)
   new_links_list = bbc_clear_links(url,links_list)
-  #print('clear_links -> new_links_list len:',len(new_links_list))
+  #print('\t\t'+'*'*100,'\n\t\t  _response_build -> new_links_list len:',len(new_links_list),'\n\t\t','*'*100,'\n')
+  #print(new_links_list)
   
   for type,page_url in new_links_list:
     if type == "page":
@@ -205,30 +209,130 @@ def bbc_response_build(url,links_list):
     elif type == "section":
       section_link_list.append(page_url)
 
-  #print('clear_links -> section_link_list len:',len(section_link_list),' ===> page_link_list len:',len(page_link_list),'\n')
-  if "https://bbc.co.uk" in url:
-    #print('\t\tclear_links',len(page_link_list),'-> SECTION END\n')
-    return page_link_list, []
+  #print(' _response_build -> section_link_list len:',len(section_link_list),' ===> page_link_list len:',len(page_link_list),'\n')
+  if deep_lvl == 'front':
+    #print('\t\t _response_build',len(page_link_list),'->',deep_lvl,'END ',url,'\n')
+    return [page_link_list, section_link_list]
+
   else:
-    #print('\t\t\tclear_links',len(page_link_list),' -> PAGE END\n')
-    if len(section_link_list) > 0:
-      return page_link_list, section_link_list
+    #print('\t\t\t _response_build',len(page_link_list),' ->',deep_lvl,'END\n')
+    return [page_link_list, []]
+
+def bbc_clear_links(url,links_list):
+  new_links_list = []
+  website_new_links_list = []
+  #print('bbc_clear_links START -> links_list len:',len(links_list))
+  tmp_set = set()
+  for link in links_list:
+    link = link.replace('https://bbc.com','').replace('https://www.bbc.com','')
+    link = link.replace('https://bbc.co.uk','').replace('https://www.bbc.co.uk','')
+    link_list = link.split('-')
+    if link_list[-1].isnumeric():
+      tmp_set.add(link)
+      if link not in new_links_list:
+        #print(today_date,' == ',url_today_date,link)    
+        new_links_list.append(link)
+        website_new_links_list.append(['page',link])
+    elif link.startswith('/') and link in ("/news","/sport"):
+        tmp_set.add(link)
+        if link not in new_links_list:
+          new_links_list.append(link)
+          website_new_links_list.append(['section',link])
     else:
-      return page_link_list, []
-    
-def bbc_article_scrap(url):
-  scrapped_page = get_page(url)
-  soup = scrapped_page.find("h1", class_="post-title")
-  post_title = soup.getText().replace("'","\'")
-  soup = scrapped_page.find("span", class_="author-container")
-  author_container = soup.getText().replace("'","\'")
-  soup = scrapped_page.find("span", class_="post-date")
-  post_date = soup.getText().replace("'","\'")
-  soup = scrapped_page.find("div", class_="article-body")
-  images = soup.find_all("img")
-  article_body = soup.getText().replace("'","\'").replace("\n\n","")
+      pass
+  #print(today_date,' == ',url_today_date, link)
+  #print(list(set(section_links_list)))
+  #print(len(links_list),len(new_links_list))
+  #print('\n\t\t -----> bbc_clear_links END -> website_new_links_list len:',len(website_new_links_list))
+  #print('\nDifference: ')
+  #print(tmp_set.difference(set(links_list)))
+  #print('\nWebsite new links list:')
+  #for p,u in website_new_links_list: print(p,u)
   
-  return {'url':url, 'post_title':post_title, 'author_container':author_container, 'post_date':post_date, 'article_body':article_body, 'images':images}
+  #raise SystemExit
+  return website_new_links_list
+
+def bbc_article_scrap(url,keys_list):
+  soup = get_page(url)
+  print(url)
+  return_json_list = []
+  return_json_list.append({'url':url})
+  site_container = soup.find("div", id="site-container")
+  if len(site_container) > 0:
+    site_container_summary = site_container.find("aside").find_all("li")
+    if len(site_container_summary) > 0:
+      post_title = soup.select('head title')[0].getText().replace("'","\'")
+      return_json_list.append({'post_title':post_title})
+      body_part = "Summary:\n"
+      for s in site_container_summary:
+        tmp_s = s.getText().replace("'","\'")
+        body_part+= '- '+tmp_s+'\n'  
+      site_container_summary = site_container.find("ol", class_="lx-stream__feed").find_all("li")
+      print('site_container_summary:',len(site_container_summary))
+      
+      for s in site_container_summary:
+        if len(s.select("article")) > 0:
+          print('article time==>',s.select("article time")[0].getText())
+        
+      print(len(site_container_summary))
+      print('site_container_summary[0].getText():\n',site_container_summary[0])
+      print('site_container_summary[5].getText():\n',site_container_summary[5])
+      print('site_container_summary[10].getText():\n',site_container_summary[10])
+      
+  for key in keys_list:
+    if key == "title":
+      post_title = soup.find("h1", id="main-heading")
+      #print(url, post_title)
+      post_title = post_title.getText().replace("'","\'")
+      return_json_list.append({'post_title':post_title})
+    elif key == "author":
+      author_container = soup.find("span", class_="author-container")
+      try:
+        author_container = author_container.getText().replace("'","\'")
+        return_json_list.append({'author_container':author_container})
+      except:
+        pass
+    elif key == "date":
+      post_title = soup.find("article") #, id="main-heading")
+      post_date = post_title.find("time") #, class_="post-date")
+      formated_post_date = datetime.strptime(post_date['datetime'], '%Y-%m-%dT%H:%M:%S.%fZ')
+      return_json_list.append({'post_date': str(formated_post_date)})
+    elif key == "body":
+      article_body = soup.find("article") #, class_="article-body")
+      article_body_list = article_body.find_all("div", attrs={'data-component':'text-block'})
+      article_body_str = ""
+      for block in article_body_list:
+        article_body_str+= block.getText()+'\n'
+
+      return_json_list.append({'article_body':article_body_str.replace("'","\'")})
+    elif key == "img":
+      article_body = soup.find("article") #, class_="article-body")
+      article_body_list = article_body.find_all("div", attrs={'data-component':'image-block'})
+      img_json_list = []
+      for block in article_body_list:
+        images = block.find_all("img")
+        print(len(images),block)
+        if images is not None and len(images) > 0:
+          #print(len(images),type(images),'++++')
+          for img in images:
+            try:
+              src = img['data-src']
+            except:
+              try:
+                src = img['src']
+              except:
+                pass
+            try:
+              alt = img['alt']
+            except:
+              alt = ""
+
+            if src and alt:
+              img_json_list.append({'src':src,'alt':alt})
+            
+      return_json_list.append({'images':img_json_list})
+          
+  return return_json_list # {'url':url, 'post_title':post_title, 'author_container':author_container, 'post_date':post_date, 'article_body':article_body} #, 'images':images}
 
 def bbc_section_links(section_links_list):
   for url in section_links_list:
@@ -236,27 +340,6 @@ def bbc_section_links(section_links_list):
     links_list = get_list_links(scrapped_page)
 
   return links_list
-
-def bbc_clear_links(url,links_list):
-  new_links_list = []
-  website_new_links_list = []
-  #print('bbc_clear_links START -> links_list len:',len(links_list))
-  for link in links_list:
-    #print(link)
-    
-    if link in "https://www.bbc.com/news":
-      website_new_links_list.append(['section',link])
-      website_new_links_list.append(['section','https://www.bbc.co.uk/search?q=poland&page=1'])
-    elif link.startswith('/news/'):
-      tmp_list = link.split('-')
-      if tmp_list[-1].isnumeric():
-        new_links_list.append('https://www.bbc.com'+link)
-        website_new_links_list.append(['section','https://www.bbc.com'+link])
-    else:
-      pass
-  #print('bbc_clear_links END -> website_new_links_list len:',len(website_new_links_list))
-  
-  return website_new_links_list
 
 #####################################################
 ############### www.standard.co.uk ##################
@@ -352,8 +435,9 @@ def standard_article_scrap(url,keys_list):
       #post_date = soup.find("span", class_="post-date")
       try:
         post_date = soup.select('amp-timeago')[-1]
-        full_post_date = post_date.attrs['datetime']
-        return_json_list.append({'post_date':full_post_date})
+        post_date = post_date.attrs['datetime']
+        formated_post_date = datetime.strptime(post_date, '%Y-%m-%dT%H:%M:%S.%fZ')
+        return_json_list.append({'post_date': str(formated_post_date)})
       except:
         pass
     elif key == "body":
